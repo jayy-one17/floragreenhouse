@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Floragreen House | Abuja Flower Plants</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#shop" aria-label="Floragreen House home">
+        <span class="brand-mark">FG</span>
+        <span>
+          <strong>Floragreen House</strong>
+          <small>Flower plants in Abuja</small>
+        </span>
+      </a>
+      <div class="toolbar" aria-label="Plant filters">
+        <div>
+          <label for="searchPlants">Search plants</label>
+          <input id="searchPlants" type="search" placeholder="Search by name" />
+        </div>
+        <div class="category-chips" id="categoryChips" aria-label="Quick category filters">
+          <button class="chip active" type="button" data-category="all">All</button>
+          <button class="chip" type="button" data-category="Flowering">Flowering</button>
+          <button class="chip" type="button" data-category="Indoor">Indoor</button>
+          <button class="chip" type="button" data-category="Outdoor">Outdoor</button>
+          <button class="chip" type="button" data-category="Succulent">Succulent</button>
+        </div>
+      </div>
+      <button class="cart-button" id="openCart" type="button" aria-label="Open cart">
+        <span class="cart-icon" aria-hidden="true">+</span>
+        Cart <span id="cartCount">0</span>
+      </button>
+    </header>
+
+    <main id="customerApp">
+      <section class="shop-hero" id="shop">
+        <div class="hero-copy">
+          <p class="eyebrow">Live potted plants, grown for Abuja homes</p>
+          <h1>Floragreen House</h1>
+          <p>
+            Order healthy flower plants for pickup or delivery across Abuja. Prices are listed in naira and delivery is calculated from the Central Business District.
+          </p>
+          <div class="hero-actions">
+            <a class="primary-link" href="#plants">Browse plants</a>
+            <a class="secondary-link" href="#checkout">Checkout</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="plant-grid" id="plants" aria-live="polite"></section>
+
+      <section class="checkout-section" id="checkout">
+        <div class="checkout-panel">
+          <h2>Checkout</h2>
+          <form id="checkoutForm">
+            <div class="form-grid">
+              <label>
+                Full name
+                <input name="name" required autocomplete="name" />
+              </label>
+              <label>
+                Phone number
+                <input name="phone" required autocomplete="tel" />
+              </label>
+              <label>
+                Order option
+                <select name="fulfillment" id="fulfillment">
+                  <option value="delivery">Deliver to me</option>
+                  <option value="pickup">I will pick up</option>
+                </select>
+              </label>
+              <label>
+                Abuja location
+                <select name="location" id="locationSelect"></select>
+              </label>
+              <div class="delivery-preview wide" id="deliveryPreview">
+                <span>Delivery estimate</span>
+                <strong id="deliveryPreviewText">Select a location</strong>
+                <div class="distance-track"><i id="distanceMeter"></i></div>
+              </div>
+              <label class="wide">
+                Address
+                <textarea name="address" id="addressField" rows="3" placeholder="Street, estate, landmark"></textarea>
+              </label>
+              <label>
+                Payment method
+                <select name="payment" id="paymentMethod">
+                  <option value="Bank transfer">Bank transfer</option>
+                  <option value="Cash">Cash</option>
+                </select>
+              </label>
+            </div>
+            <div class="bank-box" id="bankBox">
+              <strong>Bank transfer details</strong>
+              <span id="checkoutAccountName">Floragreen House Ltd</span>
+              <span id="checkoutBankDetails">GTBank 0123456789</span>
+            </div>
+            <button class="primary-button" type="submit">Place order</button>
+          </form>
+        </div>
+        <aside class="order-summary">
+          <h2>Order summary</h2>
+          <div id="summaryItems"></div>
+          <dl>
+            <div><dt>Items</dt><dd id="itemsTotal">₦0</dd></div>
+            <div><dt>Delivery</dt><dd id="deliveryTotal">₦0</dd></div>
+            <div class="total"><dt>Total</dt><dd id="grandTotal">₦0</dd></div>
+          </dl>
+        </aside>
+      </section>
+    </main>
+
+    <aside class="cart-drawer" id="cartDrawer" aria-hidden="true">
+      <div class="drawer-header">
+        <h2>Your cart</h2>
+        <button id="closeCart" type="button" aria-label="Close cart">×</button>
+      </div>
+      <div id="cartItems" class="cart-items"></div>
+      <a class="primary-link full" href="#checkout" id="checkoutLink">Checkout</a>
+    </aside>
+    <div class="scrim" id="scrim"></div>
+    <button class="floating-cart" id="floatingCart" type="button" aria-label="Open cart">
+      <span id="floatingCartCount">0</span>
+      <strong id="floatingCartTotal">₦0</strong>
+    </button>
+
+    <main class="owner-app" id="ownerApp" hidden>
+      <section class="owner-login" id="ownerLogin">
+        <div>
+          <p class="eyebrow">Private owner area</p>
+          <h1>Floragreen House inventory</h1>
+          <p>Use the private passcode to manage available flower plants and customer-facing prices.</p>
+        </div>
+        <form id="loginForm">
+          <label>
+            Passcode
+            <input id="passcode" type="password" autocomplete="current-password" required />
+          </label>
+          <button class="primary-button" type="submit">Enter management</button>
+          <p class="login-error" id="loginError"></p>
+        </form>
+      </section>
+
+      <section class="owner-dashboard" id="ownerDashboard" hidden>
+        <div class="owner-heading">
+          <div>
+            <p class="eyebrow">Owner dashboard</p>
+            <h1>Manage available plants</h1>
+          </div>
+          <button class="secondary-button" id="leaveOwner" type="button">Back to shop</button>
+        </div>
+
+        <form class="settings-form" id="paymentSettingsForm">
+          <div class="section-heading">
+            <div>
+              <h2>Payment details</h2>
+              <p>These bank transfer and WhatsApp order details control customer checkout.</p>
+            </div>
+          </div>
+          <label>
+            Account name
+            <input id="accountName" required />
+          </label>
+          <label>
+            Bank name
+            <input id="bankName" required />
+          </label>
+          <label>
+            Account number
+            <input id="accountNumber" inputmode="numeric" required />
+          </label>
+          <label>
+            WhatsApp order number
+            <input id="whatsappNumber" inputmode="tel" placeholder="2348012345678" />
+          </label>
+          <div class="manager-actions">
+            <button class="primary-button" type="submit">Save payment details</button>
+          </div>
+        </form>
+
+        <form class="manager-form" id="plantForm">
+          <div class="section-heading wide">
+            <div>
+              <h2>Plant inventory</h2>
+              <p>Add plants, prices, pictures, and stock for the customer shop.</p>
+            </div>
+          </div>
+          <input type="hidden" id="editId" />
+          <label>
+            Plant name
+            <input id="plantName" required />
+          </label>
+          <label>
+            Price in naira
+            <input id="plantPrice" type="number" min="100" step="100" required />
+          </label>
+          <label>
+            Category
+            <select id="plantCategory">
+              <option>Flowering</option>
+              <option>Indoor</option>
+              <option>Outdoor</option>
+              <option>Succulent</option>
+            </select>
+          </label>
+          <label>
+            Stock
+            <input id="plantStock" type="number" min="0" step="1" value="1" required />
+          </label>
+          <label class="wide">
+            Plant info shown on card
+            <textarea id="plantDescription" rows="3" placeholder="Short care note or selling detail for this plant"></textarea>
+          </label>
+          <label class="wide">
+            Picture
+            <input id="plantImage" type="file" accept="image/*" />
+          </label>
+          <div class="manager-actions">
+            <button class="primary-button" type="submit">Save plant</button>
+            <button class="secondary-button" id="resetForm" type="button">Clear</button>
+          </div>
+        </form>
+
+        <div class="admin-list" id="adminList"></div>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="app.js"></script>
+  </body>
+</html>
