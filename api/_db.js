@@ -1,8 +1,26 @@
 const { Redis } = require("@upstash/redis");
 
+const redisUrl =
+  process.env.KV_REST_API_URL ||
+  process.env.KV_URL ||
+  process.env.UPSTASH_REDIS_REST_URL;
+
+const redisToken =
+  process.env.KV_REST_API_TOKEN ||
+  process.env.UPSTASH_REDIS_REST_TOKEN;
+
+if (!redisUrl || !redisToken) {
+  throw new Error(
+    "Redis connection env vars are missing. Checked KV_REST_API_URL/KV_URL/UPSTASH_REDIS_REST_URL and KV_REST_API_TOKEN/UPSTASH_REDIS_REST_TOKEN, found url=" +
+      JSON.stringify(redisUrl) +
+      " token=" +
+      (redisToken ? "[present]" : "[missing]")
+  );
+}
+
 const redis = new Redis({
-  url: process.env.KV_REST_API_URL,
-  token: process.env.KV_REST_API_TOKEN
+  url: redisUrl,
+  token: redisToken
 });
 
 const DB_KEY = "floragreen:db";
@@ -115,4 +133,5 @@ function sendJson(res, status, payload) {
 }
 
 module.exports = { redis, readDb, writeDb, sendJson, defaultDb };
+
 
