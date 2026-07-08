@@ -5,22 +5,30 @@ let redisInstance = null;
 function getRedis() {
   if (redisInstance) return redisInstance;
 
-  const redisUrl =
-    process.env.KV_REST_API_URL ||
-    process.env.KV_URL ||
-    process.env.UPSTASH_REDIS_REST_URL;
+  const urlCandidates = [
+    process.env.KV_REST_API_URL,
+    process.env.KV_REST_API_URL_KV_REST_API_URL,
+    process.env.KV_REST_API_URL_KV_URL,
+    process.env.KV_URL,
+    process.env.UPSTASH_REDIS_REST_URL
+  ].filter((v) => typeof v === "string" && v.trim().length > 0);
 
-  const redisToken =
-    process.env.KV_REST_API_TOKEN ||
-    process.env.UPSTASH_REDIS_REST_TOKEN;
+  const tokenCandidates = [
+    process.env.KV_REST_API_TOKEN,
+    process.env.KV_REST_API_URL_KV_REST_API_TOKEN,
+    process.env.UPSTASH_REDIS_REST_TOKEN
+  ].filter((v) => typeof v === "string" && v.trim().length > 0);
+
+  const redisUrl = urlCandidates[0];
+  const redisToken = tokenCandidates[0];
 
   if (!redisUrl || !redisToken) {
     const available = Object.keys(process.env).filter((k) => k.includes("REDIS") || k.includes("KV_"));
     throw new Error(
-      "Redis env vars missing. url=" +
-        JSON.stringify(redisUrl) +
-        " token=" +
-        (redisToken ? "[present]" : "[missing]") +
+      "Redis env vars missing after checking all known name variants. url found=" +
+        Boolean(redisUrl) +
+        " token found=" +
+        Boolean(redisToken) +
         ". Env var names available on this function containing REDIS or KV_: " +
         JSON.stringify(available)
     );
@@ -142,5 +150,6 @@ function sendJson(res, status, payload) {
 }
 
 module.exports = { readDb, writeDb, sendJson, defaultDb };
+
 
 
