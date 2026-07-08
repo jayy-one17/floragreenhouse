@@ -1,27 +1,34 @@
 const { Redis } = require("@upstash/redis");
 
-const redisUrl =
-  process.env.KV_REST_API_URL ||
-  process.env.KV_URL ||
-  process.env.UPSTASH_REDIS_REST_URL;
+let redisInstance = null;
 
-const redisToken =
-  process.env.KV_REST_API_TOKEN ||
-  process.env.UPSTASH_REDIS_REST_TOKEN;
+function getRedis() {
+  if (redisInstance) return redisInstance;
 
-if (!redisUrl || !redisToken) {
-  throw new Error(
-    "Redis connection env vars are missing. Checked KV_REST_API_URL/KV_URL/UPSTASH_REDIS_REST_URL and KV_REST_API_TOKEN/UPSTASH_REDIS_REST_TOKEN, found url=" +
-      JSON.stringify(redisUrl) +
-      " token=" +
-      (redisToken ? "[present]" : "[missing]")
-  );
+  const redisUrl =
+    process.env.KV_REST_API_URL ||
+    process.env.KV_URL ||
+    process.env.UPSTASH_REDIS_REST_URL;
+
+  const redisToken =
+    process.env.KV_REST_API_TOKEN ||
+    process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  if (!redisUrl || !redisToken) {
+    const available = Object.keys(process.env).filter((k) => k.includes("REDIS") || k.includes("KV_"));
+    throw new Error(
+      "Redis env vars missing. url=" +
+        JSON.stringify(redisUrl) +
+        " token=" +
+        (redisToken ? "[present]" : "[missing]") +
+        ". Env var names available on this function containing REDIS or KV_: " +
+        JSON.stringify(available)
+    );
+  }
+
+  redisInstance = new Redis({ url: redisUrl, token: redisToken });
+  return redisInstance;
 }
-
-const redis = new Redis({
-  url: redisUrl,
-  token: redisToken
-});
 
 const DB_KEY = "floragreen:db";
 
@@ -113,6 +120,7 @@ const defaultDb = {
 // seeds Redis with the default starter data so the very first request
 // (in any region) doesn't come back empty.
 async function readDb() {
+  const redis = getRedis();
   const saved = await redis.get(DB_KEY);
   if (saved) {
     // Upstash may return the value already parsed (object) or as a string
@@ -125,6 +133,7 @@ async function readDb() {
 }
 
 async function writeDb(db) {
+  const redis = getRedis();
   await redis.set(DB_KEY, JSON.stringify(db));
 }
 
@@ -132,6 +141,6 @@ function sendJson(res, status, payload) {
   res.status(status).json(payload);
 }
 
-module.exports = { redis, readDb, writeDb, sendJson, defaultDb };
+module.exports = { readDb, writeDb, sendJson, defaultDb };
 
 
