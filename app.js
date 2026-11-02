@@ -1,7 +1,10 @@
+// Plants, prices, pictures and payment details now live in the shared
+// database (served by /api/state). The old keys below are only used once, to
+// move data saved on the owner's phone into that database.
 const storageKey = "floragreen-plants-v1";
 const cartKey = "floragreen-cart-v1";
 const settingsKey = "floragreen-settings-v1";
-const ownerPasscode = "floragreen-admin";
+const ownerSessionKey = "floragreen-owner-session";
 const defaultSettings = {
   accountName: "Floragreen House Ltd",
   bankName: "GTBank",
@@ -98,9 +101,10 @@ const starterPlants = [
   }
 ];
 
-let plants = readPlants();
+let plants = starterPlants.map((plant) => ({ ...plant }));
 let cart = readCart();
-let settings = readSettings();
+let settings = { ...defaultSettings };
+let ownerPasscode = readOwnerSession();
 let pendingImage = "";
 let customSelects = [];
 let currentCategory = "all";
@@ -133,31 +137,205 @@ const floatingCart = document.querySelector("#floatingCart");
 const floatingCartCount = document.querySelector("#floatingCartCount");
 const floatingCartTotal = document.querySelector("#floatingCartTotal");
 
-function readPlants() {
-  const saved = localStorage.getItem(storageKey);
-  return saved ? JSON.parse(saved) : starterPlants;
-}
-
-function savePlants() {
-  localStorage.setItem(storageKey, JSON.stringify(plants));
-}
-
 function readCart() {
-  const saved = localStorage.getItem(cartKey);
-  return saved ? JSON.parse(saved) : [];
+  try {
+    const saved = localStorage.getItem(cartKey);
+    return saved ? JSON.parse(saved) : [];
+  } catch (error) {
+    return [];
+  }
 }
 
 function saveCart() {
-  localStorage.setItem(cartKey, JSON.stringify(cart));
+  try {
+    localStorage.setItem(cartKey, JSON.stringify(cart));
+  } catch (error) {
+    /* cart just won't be remembered */
+  }
 }
 
-function readSettings() {
-  const saved = localStorage.getItem(settingsKey);
-  return saved ? { ...defaultSettings, ...JSON.parse(saved) } : { ...defaultSettings };
+function readOwnerSession() {
+  try {
+    return sessionStorage.getItem(ownerSessionKey) || "";
+  } catch (error) {
+    return "";
+  }
 }
 
-function saveSettings() {
-  localStorage.setItem(settingsKey, JSON.stringify(settings));
+function writeOwnerSession(value) {
+  ownerPasscode = value;
+  try {
+    if (value) sessionStorage.setItem(ownerSessionKey, value);
+    else sessionStorage.removeItem(ownerSessionKey);
+  } catch (error) {
+    /* ignore */
+  }
+}
+
+// ---- Talking to the shared database (/api) ----
+
+async function api(path, options = {}) {
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  if (options.owner) headers["x-owner-passcode"] = ownerPasscode;
+  const response = await fetch(path, {
+    method: options.method || "GET",
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined,
+    keepalive: Boolean(options.keepalive)
+  });
+  let data = {};
+  try {
+    data = await response.json();
+  } catch (error) {
+    /* empty or non-JSON reply */
+  }
+  if (!response.ok) {
+    const failure = new Error(data.error || `Request failed (${response.status})`);
+    failure.status = response.status;
+    throw failure;
+  }
+  return data;
+}
+
+function applyState(state) {
+  if (Array.isArray(state.plants)) plants = state.plants;
+  if (state.settings) settings = { ...defaultSettings, ...state.settings };
+  reconcileCart();
+}
+
+// Drops cart lines for plants that were removed and trims quantities to stock.
+function reconcileCart() {
+  cart = cart
+    .map((item) => {
+      const plant = plants.find((entry) => entry.id === item.id);
+      return plant ? { ...item, qty: Math.min(item.qty, plant.stock) } : null;
+    })
+    .filter((item) => item && item.qty > 0);
+}
+
+function renderShop() {
+  renderPlants();
+  renderCart();
+  renderAdminList();
+  renderCheckoutPayment();
+}
+
+async function loadState({ quiet = false } = {}) {
+  try {
+    applyState(await api("/api/state"));
+    renderShop();
+    // Don't overwrite the owner's payment form while they may be typing in it.
+    if (ownerDashboard.hidden) renderPaymentSettings();
+  } catch (error) {
+    if (!quiet) showToast("Could not load the latest shop data. Showing saved plants.");
+  }
+}
+
+// When the owner's passcode stops working (or the server rejects a save),
+// send them back to the login box.
+function handleOwnerError(error) {
+  if (error.status === 401) {
+    writeOwnerSession("");
+    ownerDashboard.hidden = true;
+    ownerLogin.hidden = false;
+    document.querySelector("#loginError").textContent = "Your session ended. Please log in again.";
+    return;
+  }
+  showToast(error.message || "Could not save. Please try again.");
+}
+
+async function savePlants() {
+  const result = await api("/api/plants", { method: "PUT", owner: true, body: { plants } });
+  plants = result.plants;
+  return result;
+}
+
+async function saveSettings() {
+  const result = await api("/api/settings", { method: "PUT", owner: true, body: { settings } });
+  settings = { ...defaultSettings, ...result.settings };
+  return result;
+}
+
+// Shrinks a picture so it uploads fast and stays small in the database.
+function compressImage(source) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const maxSide = 720;
+      const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(img.width * scale));
+      canvas.height = Math.max(1, Math.round(img.height * scale));
+      const context = canvas.getContext("2d");
+      context.fillStyle = "#ffffff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.drawImage(img, 0, 0, canvas.width, canvas.height);
+      let quality = 0.78;
+      let output = canvas.toDataURL("image/jpeg", quality);
+      while (output.length > 350000 && quality > 0.4) {
+        quality -= 0.1;
+        output = canvas.toDataURL("image/jpeg", quality);
+      }
+      resolve(output);
+    };
+    img.onerror = () => reject(new Error("That picture could not be read."));
+    img.src = source;
+  });
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error("That picture could not be read."));
+    reader.readAsDataURL(file);
+  });
+}
+
+// One-time move of plants/payment details saved on this phone before the
+// shared database existed.
+async function offerPhoneDataMigration() {
+  let savedPlants = null;
+  let savedSettings = null;
+  try {
+    savedPlants = JSON.parse(localStorage.getItem(storageKey) || "null");
+    savedSettings = JSON.parse(localStorage.getItem(settingsKey) || "null");
+  } catch (error) {
+    return;
+  }
+  if (!Array.isArray(savedPlants) && !savedSettings) return;
+
+  const ok = window.confirm(
+    "This phone has plants and payment details saved from before. Publish them to the live shop so every phone sees them? This replaces what is online now."
+  );
+  if (!ok) return;
+
+  try {
+    if (Array.isArray(savedPlants)) {
+      const prepared = [];
+      for (const plant of savedPlants) {
+        const next = { ...plant };
+        if (typeof next.image === "string" && next.image.startsWith("data:image/")) {
+          next.image = await compressImage(next.image);
+        }
+        prepared.push(next);
+      }
+      plants = prepared;
+      await savePlants();
+    }
+    if (savedSettings) {
+      settings = { ...defaultSettings, ...savedSettings };
+      await saveSettings();
+    }
+    localStorage.removeItem(storageKey);
+    localStorage.removeItem(settingsKey);
+    await loadState();
+    renderPaymentSettings();
+    showToast("Your phone's shop data is now live for everyone.");
+  } catch (error) {
+    handleOwnerError(error);
+    await loadState({ quiet: true });
+  }
 }
 
 function money(value) {
@@ -601,9 +779,13 @@ function togglePayment() {
   bankBox.hidden = paymentMethod.value !== "Bank transfer";
 }
 
-function renderPaymentSettings() {
+function renderCheckoutPayment() {
   checkoutAccountName.textContent = settings.accountName;
   checkoutBankDetails.textContent = `${settings.bankName} ${settings.accountNumber}`;
+}
+
+function renderPaymentSettings() {
+  renderCheckoutPayment();
   document.querySelector("#accountName").value = settings.accountName;
   document.querySelector("#bankName").value = settings.bankName;
   document.querySelector("#accountNumber").value = settings.accountNumber;
@@ -663,10 +845,17 @@ function editPlant(id) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function removePlant(id) {
+async function removePlant(id) {
+  const previous = plants;
   plants = plants.filter((plant) => plant.id !== id);
   cart = cart.filter((item) => item.id !== id);
-  savePlants();
+  try {
+    await savePlants();
+    showToast("Plant deleted.");
+  } catch (error) {
+    plants = previous;
+    handleOwnerError(error);
+  }
   renderPlants();
   renderCart();
   renderAdminList();
@@ -716,66 +905,85 @@ function initEvents() {
       return;
     }
 
-    const message = buildWhatsAppOrder(event.target);
+    const form = event.target;
+    const message = buildWhatsAppOrder(form);
+    const items = cart.map((item) => ({ id: item.id, qty: item.qty }));
+    // WhatsApp must open straight from the tap, so this happens before any waiting.
     if (!openWhatsAppOrder(message)) return;
 
-    cart.forEach((item) => {
-      const plant = plants.find((entry) => entry.id === item.id);
-      if (plant) plant.stock = Math.max(0, plant.stock - item.qty);
-    });
-
-    savePlants();
     cart = [];
-    renderPlants();
     renderCart();
-    renderAdminList();
-    event.target.reset();
+    form.reset();
     toggleCheckoutFields();
     togglePayment();
     showToast("WhatsApp opened with the order details. Tap Send there to notify the owner.");
+
+    // Take the stock off the shelf for everyone and keep a copy of the order.
+    api("/api/orders", { method: "POST", body: { items, message }, keepalive: true })
+      .then((state) => {
+        applyState(state);
+        renderShop();
+      })
+      .catch(() => loadState({ quiet: true }));
   });
 
-  document.querySelector("#paymentSettingsForm").addEventListener("submit", (event) => {
+  document.querySelector("#paymentSettingsForm").addEventListener("submit", async (event) => {
     event.preventDefault();
+    const previous = settings;
     settings = {
       accountName: document.querySelector("#accountName").value.trim(),
       bankName: document.querySelector("#bankName").value.trim(),
       accountNumber: document.querySelector("#accountNumber").value.trim(),
       whatsappNumber: cleanWhatsAppNumber(document.querySelector("#whatsappNumber").value)
     };
-    saveSettings();
-    renderPaymentSettings();
-    showToast("Payment details updated.");
+    try {
+      await saveSettings();
+      renderPaymentSettings();
+      showToast("Payment details updated for everyone.");
+    } catch (error) {
+      settings = previous;
+      renderPaymentSettings();
+      handleOwnerError(error);
+    }
   });
 
-  document.querySelector("#loginForm").addEventListener("submit", (event) => {
+  document.querySelector("#loginForm").addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (document.querySelector("#passcode").value === ownerPasscode) {
-      ownerLogin.hidden = true;
-      ownerDashboard.hidden = false;
-      document.querySelector("#loginError").textContent = "";
-      renderAdminList();
+    const passcodeInput = document.querySelector("#passcode");
+    const loginError = document.querySelector("#loginError");
+    loginError.textContent = "";
+    try {
+      await api("/api/login", { method: "POST", body: { passcode: passcodeInput.value } });
+    } catch (error) {
+      loginError.textContent = error.status === 401 ? "Incorrect passcode." : error.message;
       return;
     }
-    document.querySelector("#loginError").textContent = "Incorrect passcode.";
+    writeOwnerSession(passcodeInput.value);
+    passcodeInput.value = "";
+    ownerLogin.hidden = true;
+    ownerDashboard.hidden = false;
+    await loadState({ quiet: true });
+    renderPaymentSettings();
+    await offerPhoneDataMigration();
   });
 
   document.querySelector("#leaveOwner").addEventListener("click", () => {
     window.location.hash = "#shop";
   });
 
-  document.querySelector("#plantImage").addEventListener("change", (event) => {
+  document.querySelector("#plantImage").addEventListener("change", async (event) => {
     const file = event.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      pendingImage = reader.result;
+    try {
+      pendingImage = await compressImage(await readFileAsDataUrl(file));
       showToast("Picture ready. Save plant to publish it.");
-    };
-    reader.readAsDataURL(file);
+    } catch (error) {
+      pendingImage = "";
+      showToast(error.message);
+    }
   });
 
-  document.querySelector("#plantForm").addEventListener("submit", (event) => {
+  document.querySelector("#plantForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const id = document.querySelector("#editId").value || `plant-${Date.now()}`;
     const existing = plants.find((plant) => plant.id === id);
@@ -787,20 +995,31 @@ function initEvents() {
       stock: Number(document.querySelector("#plantStock").value),
       image: pendingImage || existing?.image || "",
       tone: existing?.tone || "#dc6b4f",
+      leaf: existing?.leaf,
+      accent: existing?.accent,
       description:
         document.querySelector("#plantDescription").value.trim() ||
         "Healthy potted flower plant available from Floragreen House."
     };
 
-    if (existing) plants = plants.map((plant) => (plant.id === id ? nextPlant : plant));
-    else plants.unshift(nextPlant);
+    const previous = plants;
+    plants = existing ? plants.map((plant) => (plant.id === id ? nextPlant : plant)) : [nextPlant, ...plants];
 
-    savePlants();
-    resetPlantForm();
+    const saveButton = event.submitter;
+    if (saveButton) saveButton.disabled = true;
+    try {
+      await savePlants();
+      resetPlantForm();
+      showToast("Plant saved for everyone.");
+    } catch (error) {
+      plants = previous;
+      handleOwnerError(error);
+    } finally {
+      if (saveButton) saveButton.disabled = false;
+    }
     renderPlants();
     renderCart();
     renderAdminList();
-    showToast("Plant saved.");
   });
 
   document.querySelector("#resetForm").addEventListener("click", resetPlantForm);
@@ -809,8 +1028,16 @@ function initEvents() {
     const edit = event.target.dataset.edit;
     const deleteId = event.target.dataset.delete;
     if (edit) editPlant(edit);
-    if (deleteId && window.confirm("Delete this plant from the owner inventory?")) removePlant(deleteId);
+    if (deleteId && window.confirm("Delete this plant from the shop for everyone?")) removePlant(deleteId);
   });
+
+  // Keep stock and prices fresh for visitors who leave the page open.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && ownerApp.hidden) loadState({ quiet: true });
+  });
+  window.setInterval(() => {
+    if (document.visibilityState === "visible" && ownerApp.hidden) loadState({ quiet: true });
+  }, 60000);
 }
 
 function syncChips(category) {
@@ -829,3 +1056,10 @@ renderPaymentSettings();
 renderPlants();
 renderCart();
 renderAdminList();
+loadState();
+
+// If the owner already logged in during this browser session, skip the login box.
+if (ownerPasscode) {
+  ownerLogin.hidden = true;
+  ownerDashboard.hidden = false;
+}
