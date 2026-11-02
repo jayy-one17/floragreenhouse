@@ -1,4 +1,4 @@
-const { readDb, sendJson } = require("./_db");
+const { readDb, publicState, sendJson } = require("./_db");
 
 module.exports = async function handler(req, res) {
   if (req.method !== "GET") {
@@ -7,7 +7,7 @@ module.exports = async function handler(req, res) {
 
   try {
     const db = await readDb();
-    sendJson(res, 200, db);
+    sendJson(res, 200, publicState(db));
   } catch (error) {
     sendJson(res, 500, { error: error.message });
   }
